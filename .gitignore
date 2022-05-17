@@ -1,10 +1,9 @@
 .DS_Store
 dogImages/
-test_images/
-app/saved_models/
 lfw/
 saved_models/weights.best.from_scratch.hdf5
 saved_models/weights.best.vgg16.hdf5
 saved_models/weights.best.vgg19.hdf5
+saved_models/weights.best.Inception.hdf5
 .ipynb_checkpoints/
 bottleneck_features/DogVGG16Data.npz

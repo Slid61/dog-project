@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 from extract_bottleneck_features import *
 from keras.preprocessing import image
 from keras.layers import GlobalAveragePooling2D, Dense
-from keras.models import Sequential                  
+from keras.models import Sequential, load_model
+from tensorflow.keras.applications.resnet50 import preprocess_input, ResNet50                  
 from tqdm import tqdm
 from dog_names import dog_names
 
@@ -28,7 +29,7 @@ def path_to_tensor(img_path):
     # convert 3D tensor to 4D tensor with shape (1, 224, 224, 3) and return 4D tensor
     return np.expand_dims(x, axis=0)
 
-face_cascade = cv2.CascadeClassifier('haarcascades/haarcascade_frontalface_alt.xml')
+face_cascade = cv2.CascadeClassifier('../haarcascades/haarcascade_frontalface_alt.xml')
 def face_detector(img_path):
     # Processes an image and detects if it is a face based on haar_cascade classification
     img = cv2.imread(img_path)
@@ -36,32 +37,36 @@ def face_detector(img_path):
     faces = face_cascade.detectMultiScale(gray)
     return len(faces) > 0
 
-bottleneck_features = np.load('bottleneck_features/DogVGG19Data.npz')
-train_VGG19 = bottleneck_features['train']
-valid_VGG19 = bottleneck_features['valid']
-test_VGG19 = bottleneck_features['test']
+ResNet50_model = ResNet50(weights='imagenet')
+def ResNet50_predict_labels(img_path):
+    # returns prediction vector for image located at img_path
+    img = preprocess_input(path_to_tensor(img_path))
+    return np.argmax(ResNet50_model.predict(img))
 
-VGG19_model = Sequential()
-VGG19_model.add(GlobalAveragePooling2D(input_shape=train_VGG19.shape[1:]))
-VGG19_model.add(Dense(133, activation='softmax'))
+def dog_detector(img_path):
+    # Uses ResNet50 to guess if there's a dog or not in an image
+    prediction = ResNet50_predict_labels(img_path)
+    return ((prediction <= 268) & (prediction >= 151)) 
 
-VGG19_model.compile(loss='categorical_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
+Xception_model = load_model('../saved_models/weights.best.Xception.hdf5')
 
-VGG19_model.load_weights('saved_models/weights.best.VGG19.hdf5')
 
-def VGG19_predict_breed(img_path):
+def Xception_predict_breed(img_path):
+    # Takes an image and returns the predicted breed
     # extract bottleneck features
-    bottleneck_feature = extract_VGG19(path_to_tensor(img_path))
+    bottleneck_feature = extract_Xception(path_to_tensor(img_path))
     # obtain predicted vector
-    predicted_vector = VGG19_model.predict(bottleneck_feature)
+    predicted_vector = Xception_model.predict(bottleneck_feature)
     # return dog breed that is predicted by the model
     return dog_names[np.argmax(predicted_vector)]
 
 def app_messages(img_path, breed):
-    if face_detector(img_path):
-        return f"I don't think that's a dog, but if I had to guess...\nyou look like a {breed}!"
+    if dog_detector(img_path):
+        return f"What a cute dog! Is that a {breed}?\nI'm 85% certain!"
+    elif face_detector(img_path):
+        return f"That's not a dog, that's a person...\nand they look like a {breed}!"
     else:
-        return f"What a cute dog! Is that a {breed}?\nI'm 73% certain!"
+        return f"I don't think that's a dog, but if I had to guess...\nyou look like a {breed}!"
 
 @app.route('/')
 def upload_form():
@@ -80,7 +85,7 @@ def upload_image():
         filename = secure_filename(file.filename)
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         print('upload_image filename: ' + app.config['UPLOAD_FOLDER'] + filename)
-        breed = VGG19_predict_breed(app.config['UPLOAD_FOLDER'] + filename)
+        breed = Xception_predict_breed(app.config['UPLOAD_FOLDER'] + filename)
         printout = app_messages(app.config['UPLOAD_FOLDER'] + filename, breed)
         flash(printout)
         return render_template('upload.html', filename=filename)
